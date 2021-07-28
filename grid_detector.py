@@ -41,16 +41,16 @@ class GridDetector:
         # Function for reordering corners of a contour as [top-left, top-right, bottom-left, bottom-right]
         points = contour.reshape(contour.shape[0], -1)
         reordered = np.array([[0, 0], [self.GRID_WIDTH, 0], [0, self.GRID_HEIGHT], [
-            self.GRID_WIDTH, self.GRID_HEIGHT]], dtype=int).reshape((4, 1, 2))
+            self.GRID_WIDTH, self.GRID_HEIGHT]], dtype=int)
         # Find the top-left and bottom-right corners by the sum of their coordinate values
         sumOrder = np.argsort(np.sum(points, axis=1))
-        reordered[0] = contour[sumOrder[0]]
-        reordered[3] = contour[sumOrder[3]]
+        reordered[0] = points[sumOrder[0]]
+        reordered[3] = points[sumOrder[-1]]
 
         # Find the top-right and bottom-left corners by their y coordinates
         verticalOrder = np.argsort(np.diff(points, axis=1).reshape(1, -1))
         reordered[1] = contour[verticalOrder[0][0]]
-        reordered[2] = contour[verticalOrder[0][3]]
+        reordered[2] = contour[verticalOrder[0][-1]]
 
         return reordered
 
@@ -87,7 +87,7 @@ class GridDetector:
 
 
 if __name__ == "__main__":
-    MAIN_PATH = "datasets_rearranged/train/images/"
+    MAIN_PATH = "datasets_rearranged/test/images/"
 
     Detector = GridDetector(MAIN_PATH)
     # random_sudokus = np.random.randint(0, 160, size=(10,))
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     #     cv2.imshow(f"{filenames[i]}", image)
     #     cv2.waitKey()
 
-    Detector.loadImage("image36.jpg")
+    Detector.loadImage("image25.jpg")
     image, _ = Detector.run()
     cv2.imshow("image36", image)
     cv2.waitKey()
