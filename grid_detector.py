@@ -27,29 +27,25 @@ class GridDetector:
         self.preprocessed = processed
         return self.preprocessed
 
-    def findBiggestContour(self, contours, epsilon_multiplier=0.06):
+    def findBiggestContour(self, contours):
         biggest = np.array([])
         max_area = 0
         for contour in contours:
             area = cv2.contourArea(contour)
-            if area > 75:
-                circumference = cv2.arcLength(contour, True)
-                # Detect num. of corners for this contour. If not rectangular, skip.
-                approxCorner = cv2.approxPolyDP(
-                    contour, epsilon_multiplier * circumference, True)
-                if area > max_area and len(approxCorner) == 4:
-                    biggest = approxCorner
-                    max_area = area
+            if area > max(75, max_area):
+                biggest = contour
+                max_area = area
         return {"contour": self.reorder(biggest), "area": max_area}
 
     def reorder(self, contour):
         # Function for reordering corners of a contour as [top-left, top-right, bottom-left, bottom-right]
-        points = contour.reshape(4, -1)
-        reordered = np.zeros((4, 1, 2), dtype=int)
+        points = contour.reshape(contour.shape[0], -1)
+        reordered = np.array([[0, 0], [self.GRID_WIDTH, 0], [0, self.GRID_HEIGHT], [
+            self.GRID_WIDTH, self.GRID_HEIGHT]], dtype=int).reshape((4, 1, 2))
         # Find the top-left and bottom-right corners by the sum of their coordinate values
         sumOrder = np.argsort(np.sum(points, axis=1))
-        reordered[0] = points[sumOrder[0]]
-        reordered[3] = points[sumOrder[3]]
+        reordered[0] = contour[sumOrder[0]]
+        reordered[3] = contour[sumOrder[3]]
 
         # Find the top-right and bottom-left corners by their y coordinates
         verticalOrder = np.argsort(np.diff(points, axis=1).reshape(1, -1))
