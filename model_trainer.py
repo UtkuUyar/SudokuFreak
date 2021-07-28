@@ -1,14 +1,16 @@
 """
 TODOS:
 1.  Train a model for digit recognition: Input shape = (56, 56, 1), Output shape = (11, )
-2.  Preprocess train and test data for sudoku images by using GridDetector.
-3.  Reformat the labels. (value -> [probabilty of this square being a digit, c], where c represents probabilities for each digit.)
-4.  Use transfer learning methodologies and train model with sudoku image data.
+2.  Preprocess train and test data for sudoku images by using GridDetector. and
+    Reformat the labels. (value -> [probabilty of this square being a digit, c], where c represents probabilities for each digit.)
+3.  Use transfer learning methodologies and train model with sudoku image data.
 """
 import os
+import cv2
 from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy.core.fromnumeric import shape
 import tensorflow as tf
 import tensorflow.keras.layers as tfl
 from keras.datasets import mnist
@@ -16,6 +18,85 @@ from keras.datasets import mnist
 from grid_detector import GridDetector
 
 os.system("color")
+
+
+def divideTestDev(X_test, y_test):
+    test_dev_shuffle = np.arange(0, X_test.shape[0])
+    np.random.shuffle(test_dev_shuffle)
+
+    test_dev_shuffle = tf.Variable(test_dev_shuffle, dtype=tf.int64)
+
+    X_test = tf.gather(X_test, test_dev_shuffle)
+    y_test = tf.gather(y_test, test_dev_shuffle)
+
+    X_val, y_val = X_test[0:X_test.shape[0] //
+                          2], y_test[0:y_test.shape[0] // 2]
+    X_test, y_test = X_test[X_test.shape[0] //
+                            2:], y_test[y_test.shape[0] // 2:]
+
+    return (X_val, y_val), (X_test, y_test)
+
+
+def reformatLabels(save=False):
+    read_path = "datasets_rearranged/{}/labels/"
+    write_path = "datasets_rearranged/preprocessed/{}/labels/"
+    result = {"y_train": [], "y_test": []}
+    for subset in ["train", "test"]:
+        file_path = read_path.format(subset)
+        save_path = write_path.format(subset)
+        for label_filename in os.listdir(file_path):
+            with open(os.path.join(file_path, label_filename), "r") as label_file:
+                matrix = list(
+                    map(str.strip, label_file.read().split("\n")))[2:-1]
+
+            matrix = np.array(list(map(str.split, matrix)))
+            matrix = matrix.astype(int)
+
+            matrix = tf.keras.utils.to_categorical(matrix.reshape(
+                81, ), num_classes=10).reshape((9, 9, 10))
+            matrix[:, :, 0] = (matrix[:, :, 0] < 1).astype(int)
+
+            result[f"y_{subset}"].append(matrix)
+
+            if save:
+                path = os.path.join(save_path, label_filename.split('.')[0])
+                print("\033[A" + "\033[K" + f"Saving {path + '.npy'}...")
+                np.save(path, matrix)
+
+        result[f"y_{subset}"] = tf.convert_to_tensor(result[f"y_{subset}"])
+    print()
+    return result
+
+# TODO: ADD READING FROM SAVED FILES OPTION
+
+
+def extractGrids(detector, images_map, from_saved=False):
+    result = {"X_train": [], "X_test": []}
+    for subset in ["train", "test"]:
+        detector.path = f"datasets_rearranged/{subset}/images/"
+        for filename in images_map[subset]:
+            detector.loadImage(filename)
+            preprocessed = detector.preProcessing()
+
+            contours, _ = detector.findContours()
+            biggestContour = detector.findBiggestContour(contours)
+            grid = detector.birdEyeView(
+                biggestContour["contour"], biggestContour["area"])
+
+            grid = cv2.cvtColor(grid, cv2.COLOR_BGR2GRAY)
+
+            grid_image = Image.fromarray(grid)
+            grid_path = f"datasets_rearranged/preprocessed/{subset}/images/{filename}"
+            print("\033[A" + "\033[K" + f"Saving {grid_path}...")
+            grid_image.save(grid_path)
+
+            result[f"X_{subset}"].append(grid)
+    print()
+
+    result["X_train"] = tf.convert_to_tensor(result["X_train"])
+    result["X_test"] = tf.convert_to_tensor(result["X_test"])
+
+    return result
 
 
 class digitRecognitionModel():
@@ -62,18 +143,7 @@ class digitRecognitionModel():
         X_test = tf.image.resize(X_test, [56, 56])
 
         # Shuffling and splitting dev/test data
-        test_dev_shuffle = np.arange(0, X_test.shape[0])
-        np.random.shuffle(test_dev_shuffle)
-
-        test_dev_shuffle = tf.Variable(test_dev_shuffle, dtype=tf.int64)
-
-        X_test = tf.gather(X_test, test_dev_shuffle)
-        y_test = tf.gather(y_test, test_dev_shuffle)
-
-        X_val, y_val = X_test[0:X_test.shape[0] //
-                              2], y_test[0:y_test.shape[0] // 2]
-        X_test, y_test = X_test[X_test.shape[0] //
-                                2:], y_test[y_test.shape[0] // 2:]
+        (X_val, y_val), (X_test, y_test) = divideTestDev(X_test, y_test)
 
         return (X_train, y_train), (X_val, y_val), (X_test, y_test)
 
@@ -121,22 +191,30 @@ if __name__ == "__main__":
     test_images = os.listdir(SUDOKU_DATASET_TEST)
 
     images_map = {"train": train_images, "test": test_images}
-    try:
-        for subset in ["train", "test"]:
-            detector.path = f"datasets_rearranged/{subset}/images/"
-            for filename in images_map[subset]:
-                detector.loadImage(filename)
-                preprocessed = detector.preProcessing()
 
-                contours, _ = detector.findContours()
-                biggestContour = detector.findBiggestContour(contours)
-                grid = detector.birdEyeView(
-                    biggestContour["contour"], biggestContour["area"])
+    # 2.1. Extract sudoku grids from dataset
+    grids = extractGrids(detector, images_map, from_saved=True)
+    X_train, X_test = grids.values()
 
-                grid_image = Image.fromarray(grid)
-                grid_path = f"datasets_rearranged/preprocessed/{subset}/images/{filename}"
-                print("\033[A" + "\033[K" + f"Saving {grid_path}...")
-                grid_image.save(grid_path)
+    X_train = tf.reshape(X_train, (list(X_train.shape) + [1]))
+    X_test = tf.reshape(X_test, (list(X_test.shape) + [1]))
 
-    except:
-        print(filename)
+    # 2.2 Reformat the labels
+    labels = reformatLabels(save=True)
+    y_train, y_test = labels.values()
+
+    # 2.3 Split test/dev sets
+    (X_val, y_val), (X_test, y_test) = divideTestDev(X_test, y_test)
+
+    # 2.4 Construct train, dev, test tensor datasets
+    train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train))
+    dev_dataset = train_dataset = tf.data.Dataset.from_tensor_slices(
+        (X_val, y_val))
+    test_dataset = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+
+    # 2.5. Apply Data augmentation for datasets.
+    augmentation = tf.keras.Sequential([
+        tfl.experimental.preprocessing.RandomFlip(
+            "horizontal_and_vertical"),
+        tfl.experimental.preprocessing.RandomRotation(0.2),
+    ])
