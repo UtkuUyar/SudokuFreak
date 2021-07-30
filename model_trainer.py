@@ -20,6 +20,10 @@ from grid_detector import GridDetector
 os.system("color")
 
 
+def progressBar(message, filename):
+    print("\033[A" + "\033[K" + f"{message}:\t{filename}...")
+
+
 def divideTestDev(X_test, y_test):
     test_dev_shuffle = np.arange(0, X_test.shape[0])
     np.random.shuffle(test_dev_shuffle)
@@ -37,10 +41,9 @@ def divideTestDev(X_test, y_test):
     return (X_val, y_val), (X_test, y_test)
 
 
-def reformatLabels(save=False):
+def reformatLabels(save=True):
     read_path = "datasets_rearranged/{}/labels/"
     write_path = "datasets_rearranged/preprocessed/{}/labels/"
-    result = {"y_train": [], "y_test": []}
     for subset in ["train", "test"]:
         file_path = read_path.format(subset)
         save_path = write_path.format(subset)
@@ -56,22 +59,15 @@ def reformatLabels(save=False):
                 81, ), num_classes=10).reshape((9, 9, 10))
             matrix[:, :, 0] = (matrix[:, :, 0] < 1).astype(int)
 
-            result[f"y_{subset}"].append(matrix)
-
             if save:
                 path = os.path.join(save_path, label_filename.split('.')[0])
-                print("\033[A" + "\033[K" + f"Saving {path + '.npy'}...")
+                progressBar("Saving", path + ".npy")
                 np.save(path, matrix)
 
-        result[f"y_{subset}"] = tf.convert_to_tensor(result[f"y_{subset}"])
     print()
-    return result
-
-# TODO: ADD READING FROM SAVED FILES OPTION
 
 
-def extractGrids(detector, images_map, from_saved=False):
-    result = {"X_train": [], "X_test": []}
+def extractGrids(detector, images_map):
     for subset in ["train", "test"]:
         detector.path = f"datasets_rearranged/{subset}/images/"
         for filename in images_map[subset]:
@@ -87,16 +83,10 @@ def extractGrids(detector, images_map, from_saved=False):
 
             grid_image = Image.fromarray(grid)
             grid_path = f"datasets_rearranged/preprocessed/{subset}/images/{filename}"
-            print("\033[A" + "\033[K" + f"Saving {grid_path}...")
+            progressBar("Saving", grid_path)
             grid_image.save(grid_path)
 
-            result[f"X_{subset}"].append(grid)
     print()
-
-    result["X_train"] = tf.convert_to_tensor(result["X_train"])
-    result["X_test"] = tf.convert_to_tensor(result["X_test"])
-
-    return result
 
 
 class digitRecognitionModel():
@@ -192,19 +182,54 @@ if __name__ == "__main__":
 
     images_map = {"train": train_images, "test": test_images}
 
-    # 2.1. Extract sudoku grids from dataset
-    grids = extractGrids(detector, images_map, from_saved=True)
-    X_train, X_test = grids.values()
+    # 2.1. Extract sudoku grids from dataset and reformat labels
+    extractGrids(detector, images_map)
+    reformatLabels(save=True)
+    X_train, X_test = [], []
+    y_train, y_test = [], []
 
+    # 2.2 Construct matrices
+    PREPROCESSED_TRAIN = "datasets_rearranged/preprocessed/{}/{}/"
+    PREPROCESSED_TEST = "datasets_rearranged/preprocessed/{}/{}/"
+    print("Loading saved data")
+    for subset in ["train", "test"]:
+        for filename in os.listdir(PREPROCESSED_TRAIN.format(subset, "images")):
+            label_filename = os.path.join(
+                PREPROCESSED_TRAIN.format(subset, "labels"), filename.split(".")[0] + ".npy")
+            image_filename = os.path.join(PREPROCESSED_TRAIN.format(subset, "images"),
+                                          filename)
+
+            image = cv2.imread(image_filename, cv2.IMREAD_GRAYSCALE)
+            label = np.load(label_filename)
+
+            progressBar("Loading", filename + " and " +
+                        filename.split(".")[0] + ".npy")
+            if subset == "train":
+                X_train.append(image)
+                y_train.append(label)
+            else:
+                X_test.append(image)
+                y_test.append(label)
+
+    print()
+
+    X_train = tf.convert_to_tensor(X_train)
+    X_test = tf.convert_to_tensor(X_test)
+    y_train = tf.convert_to_tensor(y_train)
+    y_test = tf.convert_to_tensor(y_test)
+
+    # 2.3 Split test/dev sets
     X_train = tf.reshape(X_train, (list(X_train.shape) + [1]))
     X_test = tf.reshape(X_test, (list(X_test.shape) + [1]))
 
-    # 2.2 Reformat the labels
-    labels = reformatLabels(save=True)
-    y_train, y_test = labels.values()
-
-    # 2.3 Split test/dev sets
     (X_val, y_val), (X_test, y_test) = divideTestDev(X_test, y_test)
+
+    print("X_train: {}".format(X_train.shape))
+    print("X_val: {}".format(X_val.shape))
+    print("X_test: {}".format(X_test.shape))
+    print("y_train: {}".format(y_train.shape))
+    print("y_val: {}".format(y_val.shape))
+    print("y_test: {}".format(y_test.shape))
 
     # 2.4 Construct train, dev, test tensor datasets
     train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train))
@@ -218,3 +243,10 @@ if __name__ == "__main__":
             "horizontal_and_vertical"),
         tfl.experimental.preprocessing.RandomRotation(0.2),
     ])
+    batch_size = 16
+
+    aug_train_dataset = train_dataset.map(
+        lambda x, y: (augmentation(x, training=True), y))
+    aug_train_dataset = aug_train_dataset.batch(batch_size)
+
+    # Part 3: Transfer Learning
