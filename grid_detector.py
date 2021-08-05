@@ -19,14 +19,15 @@ class GridDetector:
     def preProcessing(self):
         processed = cv2.cvtColor(
             self.image, cv2.COLOR_BGR2GRAY)  # Apply grayscale
-        # Add some blur for more smooth input for binary thresholding
+        # Add some blur for more smooth input for adaptive thresholding
         processed = cv2.GaussianBlur(processed, (5, 5), 1)
-        # Apply binary inverse thresholding
+        # Apply adaptive binary inverse thresholding with blockSize = 11 and C = 2
         processed = cv2.adaptiveThreshold(processed, 255, 1, 1, 11, 2)
 
         self.preprocessed = processed
         return self.preprocessed
 
+    # We can find the sudoku grid by searching for contour that has the biggest area.
     def findBiggestContour(self, contours):
         biggest = np.array([])
         max_area = 0
@@ -37,6 +38,7 @@ class GridDetector:
                 max_area = area
         return {"contour": self.reorder(biggest), "area": max_area}
 
+    # Function for finding top-left, top-right, bottom-left and bottom-right corners of a contour
     def reorder(self, contour):
         # Function for reordering corners of a contour as [top-left, top-right, bottom-left, bottom-right]
         points = contour.reshape(contour.shape[0], -1)
@@ -58,6 +60,7 @@ class GridDetector:
         return cv2.findContours(
             self.preprocessed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+    # Four points transformation
     def birdEyeView(self, region, maxArea):
         if region.size != 0 and maxArea > 0:
             # Setting up mapping for the transformation
