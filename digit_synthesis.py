@@ -1,9 +1,16 @@
+"""
+## Resources that I used for this script
+
+* Creating data with PIL: https://code-maven.com/create-images-with-python-pil-pillow
+* Data Augmentation: https://medium.com/@schatty/image-augmentation-in-numpy-the-spell-is-simple-but-quite-unbreakable-e1af57bb50fd
+
+"""
+
+
 import os
-import sys
 import cv2
 import numpy as np
-import imutils
-
+import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont
 from scipy.ndimage import rotate
 
@@ -60,6 +67,11 @@ def createDigits(start=0, end=9):
             if digit != start:
                 drawer = ImageDraw.Draw(img)
                 digit_width, digit_height = drawer.textsize(str(digit), font)
+                """
+                Centering the digit:
+                    h_pad + digit_width + h_pad = WIDTH --> h_pad = (WIDTH - digit_width) / 2
+                    v_pad + digit_height + v_pad = HEIGHT --> v_pad = (HEIGHT - digit_height) / 2
+                """
                 drawer.text(((56 - digit_width) / 2,
                              (56 - digit_height) / 2), str(digit), fill=255, font=font)
 
@@ -213,7 +225,7 @@ if __name__ == "__main__":
         label_filename = os.path.join(
             SAVE_FOLDER_LABEL, filename_base + ".npy")
 
-        cv2.imwrite(image_filename, image_array)
+        plt.imsave(image_filename, image_array, cmap="gray")
 
         np.save(label_filename, label)
 
